@@ -97,7 +97,7 @@ type UTLSRoundTripper struct {
 	clientHelloID *utls.ClientHelloID
 	config        *utls.Config
 	proxyDialer   proxy.Dialer
-	rtOnce        sync.Once
+	rtLock        sync.Mutex
 	rt            http.RoundTripper
 
 	// Transport for HTTP requests, which don't use uTLS.
@@ -114,12 +114,14 @@ func (rt *UTLSRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		return nil, fmt.Errorf("unsupported URL scheme %q", req.URL.Scheme)
 	}
 
-	// On the first call, make an http.Transport or http2.Transport as
-	// appropriate.
 	var err error
-	rt.rtOnce.Do(func() {
+	rt.rtLock.Lock()
+	if rt.rt == nil {
+		// On the first call, make an http.Transport or http2.Transport
+		// as appropriate.
 		rt.rt, err = makeRoundTripper(req.URL, rt.clientHelloID, rt.config, rt.proxyDialer)
-	})
+	}
+	rt.rtLock.Unlock()
 	if err != nil {
 		return nil, err
 	}
