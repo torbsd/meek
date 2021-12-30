@@ -94,11 +94,10 @@ func dialUTLS(network, addr string, cfg *utls.Config, clientHelloID *utls.Client
 //
 // Can only be reused among servers which negotiate the same ALPN.
 type UTLSRoundTripper struct {
-	sync.Mutex
-
 	clientHelloID *utls.ClientHelloID
 	config        *utls.Config
 	proxyDialer   proxy.Dialer
+	rtOnce        sync.Once
 	rt            http.RoundTripper
 
 	// Transport for HTTP requests, which don't use uTLS.
@@ -115,18 +114,16 @@ func (rt *UTLSRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		return nil, fmt.Errorf("unsupported URL scheme %q", req.URL.Scheme)
 	}
 
-	rt.Lock()
-	defer rt.Unlock()
-
-	if rt.rt == nil {
-		// On the first call, make an http.Transport or http2.Transport
-		// as appropriate.
-		var err error
+	// On the first call, make an http.Transport or http2.Transport as
+	// appropriate.
+	var err error
+	rt.rtOnce.Do(func() {
 		rt.rt, err = makeRoundTripper(req.URL, rt.clientHelloID, rt.config, rt.proxyDialer)
-		if err != nil {
-			return nil, err
-		}
+	})
+	if err != nil {
+		return nil, err
 	}
+
 	// Forward the request to the internal http.Transport or http2.Transport.
 	return rt.rt.RoundTrip(req)
 }
